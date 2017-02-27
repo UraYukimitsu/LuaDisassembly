@@ -74,6 +74,8 @@ typedef struct LuaFunction_ {
 	LuaUpval *upvalTab;
 	
 	long fileOffset;
+
+	char *functName;
 } LuaFunction;
 
 
@@ -106,9 +108,9 @@ const ArgType CFormat[] = {
 	Nil, Nil, Reg, Nil, Kst, Kst, Kst, Usg, Usg, Usg, Usg, Nil, Nil, Nil, Usg, Nil, Usg, Nil, Nil, Usg
 };
 
-LuaFunction readFunction(int fd);	
+LuaFunction readFunction(int fd, char *functName);	
 LuaConstant readConstant(int fd);
-void printFunction(LuaFunction f, char *indent, char *functName);
+void printFunction(LuaFunction f, char *indent);
 void printConstant(LuaConstant k);
 
 
