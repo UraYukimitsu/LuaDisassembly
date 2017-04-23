@@ -9,6 +9,8 @@
 #define Bx_MASK 0xFFFFC000 // 1111.1111  1111.1111  1100.0000  0000.0000
 #define Ax_MASK 0XFFFFFFC0 // 1111.1111  1111.1111  1111.1111  1100.0000
 
+#define ARGK(a) (a & (1 << 8))
+
 #define GET_OPCODE(i) ((i & OP_MASK) >> 0)
 #define GET_A(i)      ((i & A_MASK)  >> 6)
 #define GET_B(i)      ((i & B_MASK)  >> 23)
@@ -16,7 +18,13 @@
 #define GET_Bx(i)     ((i & Bx_MASK) >> 14)
 #define GET_Ax(i)     ((i & Ax_MASK) >> 6)
 
-#define ARGK(a) (a & (1 << 8))
+#define SET_OPCODE(i, op) i = ((i & ~OP_MASK) | op << 0)
+#define SET_A(i, a)       i = ((i & ~A_MASK)  | a  << 6)
+#define SET_B(i, b)       i = ((i & ~B_MASK)  | (b   < 0?(-b   - 1) | (1 << 8) :b)   << 23)
+#define SET_C(i, c)       i = ((i & ~C_MASK)  | (c   < 0?(-c   - 1) | (1 << 8) :c)   << 14)
+#define SET_Bx(i, bx)     i = ((i & ~Bx_MASK) | (bx  < 0?(-bx  - 1) | (1 << 18):bx)  << 14)
+#define SET_sBx(i, sbx)   i = ((i & ~Bx_MASK) | (sbx > 0?-(-sbx + 0x20001)     :-sbx) << 14)
+#define SET_Ax(i, ax)     i = ((i & ~Ax_MASK) | ax - 1 << 6)
 
 #define sBC(i) ((i&0x0100)?-(i-0xFF):i)
 #define sBx(i) ((i&0x020000)?-(i-0x01FFFF):i)
@@ -38,42 +46,42 @@ typedef enum ArgType_ {
 } ArgType;
 
 typedef struct __attribute__ ((packed)) FunctionHeader_ {
-	long startLine;
-	long endLine;
-	char params;
-	char vararg;
-	char registers;
+	unsigned long startLine;
+	unsigned long endLine;
+	unsigned char params;
+	unsigned char vararg;
+	unsigned char registers;
 } FunctionHeader;
 
 typedef struct LuaConstant_ {
-	char type;
-	long length;
+	unsigned char type;
+	unsigned long length;
 	char *str;
-	char boolean;
+	unsigned char boolean;
 	double number;
 } LuaConstant;
 
 typedef struct LuaUpval_ {
-	char val1;
-	char val2;
+	unsigned char val1;
+	unsigned char val2;
 } LuaUpval;
 
 typedef struct LuaFunction_ {
 	FunctionHeader header;
 	
-	long instrNum;
-	long *instrTab;
+	unsigned long instrNum;
+	unsigned long *instrTab;
 	
-	long constNum;
+	unsigned long constNum;
 	LuaConstant *constTab;
 	
-	long functNum;
+	unsigned long functNum;
 	struct LuaFunction_ *functTab;
 	
-	long upvalNum;
+	unsigned long upvalNum;
 	LuaUpval *upvalTab;
 	
-	long fileOffset;
+	unsigned long fileOffset;
 
 	char *functName;
 } LuaFunction;
@@ -81,11 +89,11 @@ typedef struct LuaFunction_ {
 
 const char Lua52Header[] = {0x1B, 0x4C, 0x75, 0x61, 0x52, 0x00, 0x01, 0x04, 0x04, 0x04, 0x08, 0x00, 0x19, 0x93, 0x0D, 0x0A, 0x1A, 0x0A};
 
-typedef enum LuaOpcodes_ {
+typedef enum LuaOpcode_ {
 	MOVE, LOADK, LOADKX, LOADBOOL, LOADNIL, GETUPVAL, GETTABUP, GETTABLE, SETTABUP, SETUPVAL,
 	SETTABLE, NEWTABLE, SELF, ADD, SUB, MUL, DIV, MOD, POW, UNM, NOT, LEN, CONCAT, JMP, EQ, LT, LE, TEST,
 	TESTSET, CALL, TAILCALL, RETURN, FORLOOP, FORPREP, TFORCALL, TFORLOOP, SETLIST, CLOSURE, VARARG, EXTRAARG
-} LuaOpcodes;
+} LuaOpcode;
 
 const char *const OpName[] = {
 	"MOVE", "LOADK", "LOADKX", "LOADBOOL", "LOADNIL", "GETUPVAL", "GETTABUP", "GETTABLE", "SETTABUP", "SETUPVAL",
@@ -113,5 +121,8 @@ LuaConstant readConstant(int fd);
 void printFunction(LuaFunction f, char *indent);
 void printConstant(LuaConstant k);
 
+
+LuaFunction readFunctionASM (char *fi);
+void        writeFunctionASM(LuaFunction f, int fdout);
 
 #endif

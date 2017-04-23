@@ -4,18 +4,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "lua.h"
-
-char* concat(const char *s1, const char *s2)
-{
-    char *result = malloc(strlen(s1)+strlen(s2)+1);//+1 for the zero-terminator
-    if(!result)
-		exit(1);
-    strcpy(result, s1);
-    strcat(result, s2);
-    return result;
-}
 
 int main(int argc, char **argv)
 {
@@ -23,13 +14,16 @@ int main(int argc, char **argv)
 	char header[18] = {0};
 	LuaFunction f;
 	
-	if(argc == 1)
+	if(argc < 2)
+	{
+		fprintf(stderr, "Usage: %s <input.lua>\n", argv[0]);
 		return 1;
+	}
 		
 	fd = open(argv[1], O_RDONLY | O_BINARY);
 	if(fd == -1)
 	{
-		fprintf(stderr, "Unable to open %s.", argv[1]);
+		fprintf(stderr, "Unable to open %s.\n", argv[1]);
 		return 1;
 	}
 	
@@ -42,6 +36,8 @@ int main(int argc, char **argv)
 	
 	f = readFunction(fd, "main");
 	printFunction(f, "");
+
+	close(fd);
 	
 	return 0;
 }
@@ -62,7 +58,7 @@ LuaFunction readFunction(int fd, char *functName)
 	
 	f.instrTab = malloc(sizeof(long) * f.instrNum);
 	if(!f.instrTab)
-		exit(1);
+		exit(2);
 	read(fd, f.instrTab, sizeof(long) * f.instrNum);
 	
 	read(fd, &f.constNum, sizeof(long));
@@ -70,7 +66,7 @@ LuaFunction readFunction(int fd, char *functName)
 	{
 		f.constTab = malloc(f.constNum * sizeof(LuaConstant));
 		if(!f.constTab)
-			exit(1);
+			exit(3);
 		for(i = 0; i < f.constNum; i++)
 		f.constTab[i] = readConstant(fd);
 	}
@@ -80,14 +76,14 @@ LuaFunction readFunction(int fd, char *functName)
 	if(f.functNum)
 		f.functTab = malloc(f.functNum * sizeof(LuaFunction));
 	if(!f.functTab)
-		exit(1);
+		exit(4);
 
 	for(i = 0; i < f.functNum; i++)
 	{
 		needed  = snprintf(NULL, 0, "%s_%d", strcmp(f.functName, "main")?f.functName:"function", i + 1);
 		childName = malloc(needed + 1);
 		if(!childName)
-			exit(1);
+			exit(5);
 		snprintf(childName, needed + 1, "%s_%d", strcmp(f.functName, "main")?f.functName:"function", i + 1);
 		fprintf(stderr, "\r"); //...For some reason it doesn't work without an instruction here...
 		f.functTab[i] = readFunction(fd, childName);
@@ -99,7 +95,7 @@ LuaFunction readFunction(int fd, char *functName)
 	if(f.upvalNum)
 		f.upvalTab = malloc(sizeof(LuaUpval)*f.upvalNum);
 	if(!f.upvalTab)
-		exit(1);
+		exit(6);
 	
 	for(i = 0; i < f.upvalNum; i++)
 	{
@@ -150,7 +146,7 @@ LuaConstant readConstant(int fd)
 			read(fd, &ret.length, sizeof(long));
 			ret.str = malloc(ret.length * sizeof(char));
 			if(!ret.str)
-				exit(1);
+				exit(7);
 			read(fd, ret.str, ret.length);
 			break;
 		
@@ -162,26 +158,34 @@ LuaConstant readConstant(int fd)
 
 void printFunction(LuaFunction f, char *indent)
 {
-	long op, a, b, c, bx, ax;
-	long i;
+	unsigned long op, a, b, c, bx, ax;
+	unsigned long i;
+	int ind = strlen(indent);
 	
-	char *indentpp = concat(indent, "\t");
+	char *indentpp = malloc(ind + 2);
+	if(!indentpp)
+		exit(8);
+	strcpy(indentpp, indent);
+	indentpp[ind] = '\t';
+	indentpp[ind + 1] = '\0';
 	
-	printf("%s%s(", indent, f.functName);
+	printf("%s;%s(", indent, f.functName);
 	for(i = 0; i < f.header.params; i++)
 	{
 		printf("A%d", i);
 		if(i + 1 < f.header.params || f.header.vararg)
 			printf(", ");
 	}
-	for(i = 0; i < f.header.vararg; i++)
-	{
-		printf("V%d", i);
-		if(i + 1 < f.header.vararg)
-			printf(", ");
-	}
+	if(f.header.vararg)
+		printf("...");
 	printf(")\n");
 	printf("%s{\n", indent);
+
+	printf("%s.params %d%c\n", indentpp, f.header.params, f.header.vararg?'+':' ');
+	printf("%s.slots  %d\n", indentpp, (int)f.header.registers);
+	//printf("%s.start  %d\n", indentpp, f.header.startLine);
+	//printf("%s.end    %d\n", indentpp, f.header.endLine);
+
 	printf("%s;%s <%d,%d> (%d instructions at %08X)\n"
 		"%s;%d%s params, %d constants, %d slots, %d upvalues\n"
 		"%sSECTION TEXT::\n",
@@ -192,8 +196,7 @@ void printFunction(LuaFunction f, char *indent)
 	
 	for(i = 0; i < f.instrNum; i++)
 	{
-		/*printf("%s\t%02X %02X %02X %02X", 
-			indentpp,
+		/*printf("%02X %02X %02X %02X", 
 			(f.instrTab[i] >> 0 )&0xFF,
 			(f.instrTab[i] >> 8 )&0xFF,
 			(f.instrTab[i] >> 16)&0xFF,
@@ -224,8 +227,8 @@ void printFunction(LuaFunction f, char *indent)
 				break;
 			
 			case iAsBx:
-				bx ^= 0x020000;
-				printf("%d %d", a, ++bx);
+				bx -= 0x01FFFF;
+				printf("%d %d", a, bx);
 				break;
 			
 			case iAx:
@@ -312,9 +315,7 @@ void printFunction(LuaFunction f, char *indent)
 				if(c != 0)
 					printf("\t; %d", c);
 				else
-				{
-					printf("\t; %d", (int)f.instrTab[i + 1]);
-				}
+					printf("\t; %d", (int)f.instrTab[i + 1]); //No idea what this means.
 				break;
 
 			case EXTRAARG:
@@ -341,7 +342,7 @@ void printFunction(LuaFunction f, char *indent)
 	if(f.upvalNum)
 		printf("\n%s;upvalues (%d) for %s:\n%sSECTION UPVALUES::", indentpp, f.upvalNum, f.functName, indentpp);
 	for(i = 0; i < f.upvalNum; i++)
-		printf("\n%s\t%d\t-\t%d\t%d", indentpp, i, (int)f.upvalTab[i].val1, (int)f.upvalTab[i].val2);
+		printf("\n%s\t%-3d:\t%d\t%d", indentpp, i, (int)f.upvalTab[i].val1, (int)f.upvalTab[i].val2);
 	
 	if(f.functNum)
 		printf("\n%s;functions (%d) for %s:\n%sSECTION FUNCTIONS::\n", indentpp, f.functNum, f.functName, indentpp);
@@ -369,6 +370,7 @@ void printFunction(LuaFunction f, char *indent)
 
 void printConstant(LuaConstant k)
 {
+	char *str;
 	switch(k.type)
 	{
 		case LUA_NIL:
@@ -384,7 +386,39 @@ void printConstant(LuaConstant k)
 			break;
 			
 		case LUA_STRING:
-			printf("\"%s\"", k.str);
+			putc('"', stdout);
+			for(str = k.str; *str; str++)
+			{
+				switch(*str)
+				{
+					case '\t':
+						putc('\\', stdout);
+						putc('t', stdout);
+						break;
+					case '\n':
+						putc('\\', stdout);
+						putc('n', stdout);
+						break;
+					case '\r':
+						putc('\\', stdout);
+						putc('r', stdout);
+						break;
+					case '\\':
+						putc('\\', stdout);
+						putc('\\', stdout);
+						break;
+					case '"':
+						putc('\\', stdout);
+						putc('"', stdout);
+						break;
+					default:
+						if(!isprint(*str))
+							printf("\\x%02x", (long)*str);
+						else
+							putc(*str, stdout);
+				}
+			}
+			putc('"', stdout);
 			break;
 		
 		default:
