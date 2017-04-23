@@ -43,7 +43,7 @@ int main(int argc, char **argv)
 	if(!inBuf)
 		return 1;
 	i = read(fdin, inBuf, bufSize);
-	f = readFunctionASM(inBuf);
+	f = readFunctionASM(inBuf, 0);
 
 	write(fdout, Lua52Header, 18);
 	writeFunctionASM(f, fdout);
@@ -62,7 +62,7 @@ int main(int argc, char **argv)
 
 #define scmp(s1, s2) memcmp(s1, s2, strlen(s2))
 
-LuaFunction readFunctionASM(char *fi)
+LuaFunction readFunctionASM(char *fi, long position)
 {
 	LuaFunction f;
 
@@ -84,7 +84,7 @@ LuaFunction readFunctionASM(char *fi)
 	f.header.params = 0;
 	f.header.vararg = 0;
 	f.header.registers = 0;
-	f.header.startLine = 0;
+	f.header.startLine = position;
 	f.header.endLine = 0;
 
 	nextToken;
@@ -621,7 +621,7 @@ LuaFunction readFunctionASM(char *fi)
 			line = functStart;
 			for(i = 0; i < f.functNum; i++)
 			{
-				f.functTab[i] = readFunctionASM(line);
+				f.functTab[i] = readFunctionASM(line, line - fi + position);
 				openBrackets = 1;
 				line++;
 				while(openBrackets && *line)
@@ -718,6 +718,8 @@ LuaFunction readFunctionASM(char *fi)
 		line++;
 		nextToken;
 	}
+
+	f.header.endLine = f.header.startLine?line - fi + position:0;
 
 	return f;
 }

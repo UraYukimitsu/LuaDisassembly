@@ -122,7 +122,7 @@ void printFunction(LuaFunction f, char *indent);
 void printConstant(LuaConstant k);
 
 
-LuaFunction readFunctionASM (char *fi);
+LuaFunction readFunctionASM (char *fi, long position);
 void        writeFunctionASM(LuaFunction f, int fdout);
 
 #endif
